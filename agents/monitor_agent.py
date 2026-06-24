@@ -2,6 +2,7 @@ import os
 import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from agents.extractor_agent import run_extraction_pipeline
 
 staging = {}
 
@@ -12,15 +13,13 @@ def get_patient_id(filename):
 def is_patient_ready(patient_id):
     """if all files are present or not"""
     patient = staging[patient_id]
-    print("is pateint ready : ",staging[patient_id])
     return (patient["bills"] is not None
             and patient['doctor_reports'] is not None
             and patient['lab_reports'] is not None)
 
 def trigger_pipeline(patient_id):
     """code for invoiking langgraph"""
-    print("langgraph invokation")
-    pass
+    run_extraction_pipeline(patient_id,staging[patient_id])
 
 class MonitorHandle(FileSystemEventHandler):
     def on_any_event(self,event):
@@ -33,12 +32,10 @@ class MonitorHandle(FileSystemEventHandler):
         self.process_file(event.src_path)
 
     def process_file(self,filepath):
-        print("processing file function")
+        folder = filepath.split('/')[-2]
         if os.path.isdir(filepath):
             return
         filename = os.path.basename(filepath)
-
-        print(f"\n new file detected:{filename}")
         patient_id = get_patient_id(filename)
         if patient_id not in staging:
             staging[patient_id] = {
@@ -46,13 +43,11 @@ class MonitorHandle(FileSystemEventHandler):
                 "doctor_reports":None,
                 "lab_reports":None
             }
-        
+      
         for file in ["bills","doctor_reports","lab_reports"]:
-            if file in filename.lower():
+            if file in folder.lower():
                 staging[patient_id][file] = filepath
             
-        print(f"current state for {patient_id}: {staging[patient_id]}")
-
         if is_patient_ready(patient_id):
             trigger_pipeline(patient_id)
 
