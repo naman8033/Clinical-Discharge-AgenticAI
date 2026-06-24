@@ -4,3 +4,6 @@ python-multipart>=0.0.12
 pydantic>=2.9.0
 pydantic-settings>=2.5.0
 watchdog>=6.0.0
+pymupdf
+python-docx
+pdf2image
