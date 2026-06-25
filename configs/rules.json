@@ -1,0 +1,29 @@
+{
+  "rules": {
+    "HTN": "Hypertension",
+    "T2DM": "Type 2 Diabetes Mellitus",
+    "DM2": "Type 2 Diabetes Mellitus",
+    "CHF": "Congestive Heart Failure",
+    "COPD": "Chronic Obstructive Pulmonary Disease",
+    "MI": "Myocardial Infarction",
+    "CAD": "Coronary Artery Disease",
+    "CKD": "Chronic Kidney Disease",
+    "UTI": "Urinary Tract Infection",
+    "PNA": "Pneumonia",
+    "SOB": "Shortness of Breath",
+    "BP": "Blood Pressure",
+    "HR": "Heart Rate",
+    "RR": "Respiratory Rate",
+    "Temp": "Temperature",
+    "Hx": "History",
+    "Rx": "Prescription",
+    "Dx": "Diagnosis",
+    "Tx": "Treatment",
+    "PRN": "as needed",
+    "BID": "twice daily",
+    "TID": "three times daily",
+    "QID": "four times daily",
+    "QD": "once daily",
+    "QHS": "at bedtime"
+  }
+}
