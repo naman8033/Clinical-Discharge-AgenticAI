@@ -4,7 +4,7 @@ import docx
 import pytesseract
 from PIL import Image
 from pdf2image import convert_from_path
-
+from langgraph_workflows.graph import graph
 def ocr_pdf(filepath):
     pages=convert_from_path(filepath)
     text=""
@@ -65,6 +65,16 @@ def run_extraction_pipeline(patient_id,patient_files):
         text=extract_file(file_path)
         extracted_data[file_type]=text
 
+    # lang graph invokation
+    graph.invoke({
+        "patient_id":patient_id,
+        "raw_data":{
+            "bill":extracted_data['bills'],
+            "doctor":extracted_data['doctor_reports'],
+            "lab":extracted_data['lab_reports']
+        }
+
+    })
     # for key,item in extracted_data.items():
     #     print(f"key : {key} \n value: {item}\n\n")
 
