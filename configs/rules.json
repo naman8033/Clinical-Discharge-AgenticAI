@@ -25,5 +25,35 @@
     "QID": "four times daily",
     "QD": "once daily",
     "QHS": "at bedtime"
+  },
+  "json_keys": {
+    "patient_id": null,
+    "patient_name": null,
+    "age": null,
+    "gender": null,
+    "address": null,
+    "admission_date": null,
+    "discharge_date": null,
+    "ward": null,
+    "bed_no": null,
+    "attending_physician": null,
+    "consulting_doctors": [],
+    "discharge_diagnosis": [],
+    "allergies": null,
+    "follow_up_appointment": [],
+    "discharge_instructions": null,
+    "medications": [
+      {
+        "sl_no": null,
+        "medicine_name": null,
+        "strength": null,
+        "dosage": null,
+        "frequency": null,
+        "route": null,
+        "period": null,
+        "remarks": null,
+        "total_quantity": null
+      }
+    ]
   }
 }
