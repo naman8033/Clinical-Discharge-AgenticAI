@@ -17,8 +17,6 @@ def build_patient_record(translated_text: dict) -> dict:
         into one canonical patient record.
     """
     print("translated data : ",translated_text)  
- 
-
     llm = ChatOpenAI(model="gpt-5.4-mini",
                      api_key=os.getenv("FOUNDATION_MODEL_API_KEY"),
                      base_url=os.getenv("LLM_BASE_URL"))
@@ -99,7 +97,7 @@ def validate_patient_record(patient_record: dict):
             ):
                 missing_fields.append(key)
 
-    print("missing field",missing_fields)
+    # print("missing field",missing_fields)
     return missing_fields
 
 def completeness_agent(state:GraphState):
