@@ -65,6 +65,11 @@ def run_extraction_pipeline(patient_id,patient_files):
         text=extract_file(file_path)
         extracted_data[file_type]=text
 
+    config = {
+        "configurable":{
+            "thread_id":"patient_01"
+        }
+    }
     # lang graph invokation
     graph.invoke({
         "patient_id":patient_id,
@@ -73,8 +78,7 @@ def run_extraction_pipeline(patient_id,patient_files):
             "doctor":extracted_data['doctor_reports'],
             "lab":extracted_data['lab_reports']
         }
-
-    })
+    },config)
     # for key,item in extracted_data.items():
     #     print(f"key : {key} \n value: {item}\n\n")
 
