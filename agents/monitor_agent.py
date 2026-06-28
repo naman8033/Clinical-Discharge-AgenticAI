@@ -22,8 +22,8 @@ def trigger_pipeline(patient_id):
     run_extraction_pipeline(patient_id,staging[patient_id])
 
 class MonitorHandle(FileSystemEventHandler):
-    def on_any_event(self,event):
-        print(event.event_type,event.src_path,event.is_directory)
+    # def on_any_event(self,event):
+        # print(event.event_type,event.src_path,event.is_directory)
     
     def on_moved(self,event):
         self.process_file(event.src_path)

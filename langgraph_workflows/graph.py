@@ -5,11 +5,14 @@ from agents.completenss_agent import completeness_agent
 from agents.human_review import human_review
 from agents.ehr_validation_agent import ehr_validation_agent
 from langgraph.checkpoint.memory import InMemorySaver
+import sqlite3
 
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 builder = StateGraph(GraphState)
 
 def route_after_completeness(state:GraphState):
+    print("in route function ",state['missing_fields'])
     if len(state['missing_fields']) > 0:
         return "human_review"
     return "ehr_validation"
@@ -31,4 +34,19 @@ builder.add_conditional_edges(
 )
 builder.add_edge("human_review","ehr_validation")
 builder.add_edge("ehr_validation",END)
-graph = builder.compile(checkpointer = InMemorySaver())
+# graph = builder.compile(checkpointer = InMemorySaver())
+# conn = SqliteSaver.from_conn_string("hospital_graph.db")
+
+# graph = builder.compile(
+#     checkpointer=conn
+# )
+conn = sqlite3.connect(
+    "hospital_graph.db",
+    check_same_thread=False
+)
+
+checkpointer = SqliteSaver(conn)
+
+graph = builder.compile(
+    checkpointer=checkpointer
+)

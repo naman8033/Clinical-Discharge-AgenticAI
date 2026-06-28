@@ -4,6 +4,8 @@ from langgraph.types import interrupt
 from agents.completenss_agent import validate_patient_record
 
 def human_review(state):
+    print("In human review")
+    
     review = interrupt({
         "patient_record": state["patient_record"],
         "missing_fields": state["missing_fields"]
