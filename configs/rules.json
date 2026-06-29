@@ -42,6 +42,7 @@
     "allergies": null,
     "follow_up_appointment": [],
     "discharge_instructions": null,
+    "discharge_ok": null,
     "medications": [
       {
         "sl_no": null,
@@ -54,6 +55,20 @@
         "remarks": null,
         "total_quantity": null
       }
-    ]
+    ],
+    "lab_results": [
+      {
+        "test_name": null,
+        "value": null,
+        "unit": null,
+        "status": null,
+        "vendor": null
+      }
+    ],
+    "bill": {
+      "total_amount": null,
+      "payment_status": null,
+      "items": []
+    }
   }
 }

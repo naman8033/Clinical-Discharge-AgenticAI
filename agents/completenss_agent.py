@@ -1,13 +1,17 @@
+import os
 import json
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langgraph_workflows.state import GraphState
 from langchain_openai import ChatOpenAI
-import os
 from dotenv import load_dotenv
+
 load_dotenv()
-with open("configs/rules.json", "r") as f:
-        rules = json.load(f)
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+with open(os.path.join(_ROOT, "configs", "rules.json"), "r") as f:
+    rules = json.load(f)
 json_schema = rules['json_keys']
 
 def build_patient_record(translated_text: dict) -> dict:
@@ -16,7 +20,6 @@ def build_patient_record(translated_text: dict) -> dict:
         Uses LLM to consolidate doctor, lab and bill data
         into one canonical patient record.
     """
-    print("translated data : ",translated_text)  
     llm = ChatOpenAI(model="gpt-5.4-mini",
                      api_key=os.getenv("FOUNDATION_MODEL_API_KEY"),
                      base_url=os.getenv("LLM_BASE_URL"))
@@ -62,8 +65,6 @@ def build_patient_record(translated_text: dict) -> dict:
             "json_schema":json_schema
         }
     )
-    print("pateint record data : \n",patient_record)
-
     return patient_record
 
 
@@ -78,7 +79,6 @@ def validate_patient_record(patient_record: dict):
                 continue
 
             required_med_fields = schema_value[0].keys()
-            print("medication : ",medications)
             for idx, medication in enumerate(medications):
                 for field in required_med_fields:
                     if (
@@ -97,7 +97,6 @@ def validate_patient_record(patient_record: dict):
             ):
                 missing_fields.append(key)
 
-    # print("missing field",missing_fields)
     return missing_fields
 
 def completeness_agent(state:GraphState):
@@ -106,7 +105,6 @@ def completeness_agent(state:GraphState):
     patient_record = build_patient_record(
         translated_text
     )
-    # print("patient record : \n",patient_record)
     state["patient_record"] = patient_record
     state['missing_fields'] = validate_patient_record(patient_record)
 

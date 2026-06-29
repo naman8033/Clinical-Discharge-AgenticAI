@@ -19,7 +19,7 @@ def normalize(value):
 
 def validation_page():
 
-    THREAD_ID = "patient_01"
+    THREAD_ID = st.session_state.get("active_thread_id", "patient_01")
 
     config = {
         "configurable": {
@@ -38,7 +38,6 @@ def validation_page():
     patient_record = state.get("patient_record", {})
     missing_fields = state.get("missing_fields", [])
 
-    # HEADER
     st.title("🏥 Human Review Dashboard")
     st.caption("Review extracted patient information before continuing the workflow.")
 
@@ -52,21 +51,13 @@ def validation_page():
 
     st.divider()
 
-    # MAIN LAYOUT
     left, right = st.columns([3, 1])
 
     edited_record = {}
 
-    ####################################################
-    # PATIENT RECORD
-    ####################################################
 
     with left:
         st.subheader("📋 Patient Record")
-
-        ####################################################
-        # NORMAL FIELDS
-        ####################################################
 
         with st.expander("📄 Extracted Information", expanded=True):
 
@@ -82,10 +73,6 @@ def validation_page():
                     value="" if value is None else str(value),
                     key=f"field_{key}"
                 )
-
-        ####################################################
-        # EXTRA MISSING FIELDS
-        ####################################################
 
         extra_missing = [
             field
@@ -109,10 +96,6 @@ def validation_page():
                         key=f"missing_{field}"
                     )
 
-        ####################################################
-        # LIST FIELDS
-        ####################################################
-
         for key, value in patient_record.items():
 
             if not isinstance(value, list):
@@ -129,10 +112,6 @@ def validation_page():
                     st.info("No records available.")
                     continue
 
-                ################################################
-                # LIST OF STRINGS
-                ################################################
-
                 if all(isinstance(item, str) for item in value):
 
                     for i, item in enumerate(value):
@@ -144,10 +123,6 @@ def validation_page():
                                 key=f"{key}_{i}"
                             )
                         )
-
-                ################################################
-                # LIST OF DICTIONARIES
-                ################################################
 
                 elif all(isinstance(item, dict) for item in value):
 
@@ -171,17 +146,12 @@ def validation_page():
 
                         edited_record[key].append(new_row)
 
-                ################################################
-                # MIXED TYPES
-                ################################################
-
                 else:
                     st.warning(
                         f"Unsupported data format for '{key}'"
                     )
                     st.write(value)            
                     
-    # VALIDATION PANEL
     with right:
         st.subheader("✅ Validation")
         if missing_fields:
@@ -194,7 +164,6 @@ def validation_page():
         st.subheader("Workflow")
         st.info(f"Thread ID\n\n{THREAD_ID}")
 
-    # REVIEWER NOTES
     st.divider()
 
     notes = st.text_area(
@@ -202,64 +171,43 @@ def validation_page():
         placeholder="Enter any reviewer comments..."
     )
 
-    # ACTION BUTTONS
     st.divider()
 
     col1, col2, col3 = st.columns(3)
 
-    # APPROVE
+    def _resume_and_navigate(payload: dict):
+        """Invoke graph with HITL response, check where it ended up, and navigate."""
+        with st.spinner("Processing — please wait..."):
+            graph.invoke(Command(resume=payload), config=config)
+        snap = graph.get_state(config)
+        if snap and snap.next:
+            next_node = snap.next[0]
+            if next_node == "human_ehr_review":
+                st.session_state.page = "EHR Review"
+            else:
+                st.session_state.page = "Document Upload"
+        elif snap and snap.values.get("final_report"):
+            st.session_state.page = "Final Report"
+        else:
+            st.session_state.page = "Document Upload"
+        st.rerun()
+
     with col1:
-        if st.button(
-            "✅ Approve",
-            use_container_width=True
-        ):
-            graph.invoke(
-                Command(
-                    resume={
-                        "action": "approve",
-                        "patient_record": edited_record,
-                        "notes": notes
-                    }
-                ),
-                config=config
-            )
+        if st.button("✅ Approve", use_container_width=True):
+            _resume_and_navigate({
+                "action": "approve",
+                "patient_record": edited_record,
+                "notes": notes,
+            })
 
-            st.success("Workflow Continued Successfully.")
-            st.balloons()
-
-    # REJECT
     with col2:
-        if st.button(
-            "❌ Reject",
-            use_container_width=True
-        ):
-            graph.invoke(
-                Command(
-                    resume={
-                        "action": "reject",
-                        "notes": notes
-                    }
-                ),
-                config=config
-            )
+        if st.button("❌ Reject", use_container_width=True):
+            _resume_and_navigate({"action": "reject", "notes": notes})
 
-            st.error("Workflow Rejected.")
-
-    # SAVE & CONTINUE
     with col3:
-        if st.button(
-            "💾 Save & Continue",
-            use_container_width=True,
-        ):
-            graph.invoke(
-                Command(
-                    resume={
-                        "action": "edit",
-                        "patient_record": edited_record,
-                        "notes": notes
-                    }
-                ),
-                config=config
-            )
-            st.success("Changes Saved Successfully.")
-            st.toast("Patient record updated.")
+        if st.button("💾 Save & Continue", use_container_width=True):
+            _resume_and_navigate({
+                "action": "edit",
+                "patient_record": edited_record,
+                "notes": notes,
+            })

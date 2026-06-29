@@ -6,10 +6,11 @@ from PIL import Image
 from pdf2image import convert_from_path
 from langgraph_workflows.graph import graph
 def ocr_pdf(filepath):
-    pages=convert_from_path(filepath)
-    text=""
+    pages = convert_from_path(filepath)
+    text = ""
     for page in pages:
-        text+=pytesseract.image_to_string(page)
+        img = page.convert("RGB") if page.mode != "RGB" else page
+        text += pytesseract.image_to_string(img)
     return text
 
 def extract_text_from_pdf(filepath):
@@ -20,9 +21,13 @@ def extract_text_from_pdf(filepath):
     return text
 
 def ocr_image(filepath):
-    image=Image.open(filepath)
-    text=pytesseract.image_to_string(image)
-    return text
+    try:
+        image = Image.open(filepath)
+        image = image.convert("RGB")
+        text = pytesseract.image_to_string(image)
+        return text if text.strip() else ""
+    except Exception as e:
+        return ""
 
 def is_scanned_pdf(filepath):
     doc=fitz.open(filepath)
@@ -44,10 +49,8 @@ def extract_file(filepath):
     ext=filepath.split(".")[-1].lower()
     if ext=="pdf":
         if is_scanned_pdf(filepath):
-            print("scanned pdf detected")
-            return ocr_pdf(filepath) 
+            return ocr_pdf(filepath)
         else:
-            print("text pdf detected")
             return extract_text_from_pdf(filepath)
     elif ext=="docx":
         return extract_docx(filepath)
@@ -60,6 +63,7 @@ def extract_file(filepath):
         return "Unsupported format"    
 
 def run_extraction_pipeline(patient_id,patient_files):
+    print("[extractor] extractor agent invoked")
     extracted_data={}
     for file_type,file_path in patient_files.items():
         text=extract_file(file_path)
@@ -67,10 +71,9 @@ def run_extraction_pipeline(patient_id,patient_files):
 
     config = {
         "configurable":{
-            "thread_id":"patient_01"
+            "thread_id": patient_id
         }
     }
-    # lang graph invokation
     graph.invoke({
         "patient_id":patient_id,
         "raw_data":{
@@ -79,7 +82,4 @@ def run_extraction_pipeline(patient_id,patient_files):
             "lab":extracted_data['lab_reports']
         }
     },config)
-    # for key,item in extracted_data.items():
-    #     print(f"key : {key} \n value: {item}\n\n")
-
 

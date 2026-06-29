@@ -22,8 +22,8 @@ def trigger_pipeline(patient_id):
     run_extraction_pipeline(patient_id,staging[patient_id])
 
 class MonitorHandle(FileSystemEventHandler):
-    # def on_any_event(self,event):
-        # print(event.event_type,event.src_path,event.is_directory)
+    def on_any_event(self,event):
+        print(event.event_type,event.src_path,event.is_directory)
     
     def on_moved(self,event):
         self.process_file(event.src_path)
@@ -32,6 +32,7 @@ class MonitorHandle(FileSystemEventHandler):
         self.process_file(event.src_path)
 
     def process_file(self,filepath):
+        print("process file is called")
         folder = filepath.split('/')[-2]
         if os.path.isdir(filepath):
             return
@@ -47,7 +48,8 @@ class MonitorHandle(FileSystemEventHandler):
         for file in ["bills","doctor_reports","lab_reports"]:
             if file in folder.lower():
                 staging[patient_id][file] = filepath
-            
+        
+        print("checking all files present")
         if is_patient_ready(patient_id):
             trigger_pipeline(patient_id)
 

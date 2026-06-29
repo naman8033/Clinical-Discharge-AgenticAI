@@ -1,10 +1,14 @@
-from typing import TypedDict, Optional,List,Dict
+from typing import TypedDict, Optional, List, Dict, Any
 
 class GraphState(TypedDict):
-    patient_id:str
-    raw_data:Dict
-    translated_data:Dict
-    patient_record:Dict
+    patient_id: str
+    raw_data: Dict
+    translated_data: Dict
+    translation_confidence: Dict        # {bill: float, doctor: float, lab: float}
+    patient_record: Dict
     missing_fields: List[str]
-    ehr_validation_result:Dict
-    final_report:Dict
+    status: str                         # active | rejected
+    ehr_validation_done: bool
+    ehr_validation_result: Any          # raw JSON string from EHR agent
+    ehr_parsed: Dict                    # parsed dict from ehr_validation_result
+    final_report: Dict                  # structured report from reporting agent
