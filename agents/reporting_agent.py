@@ -37,7 +37,7 @@ def _llm():
     )
 
 def _parse_ehr_result(raw: Any) -> dict:
-    """EHR validation agent returns a JSON string; parse it safely."""
+    """EHR validation agent returns a JSON string; parse it safely. """
     if isinstance(raw, dict):
         return raw
     if isinstance(raw, str):
