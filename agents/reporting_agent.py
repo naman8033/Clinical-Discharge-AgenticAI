@@ -36,6 +36,22 @@ def _llm():
         base_url=os.getenv("LLM_BASE_URL"),
     )
 
+def _parse_ehr_result(raw: Any) -> dict:
+    """EHR validation agent returns a JSON string; parse it safely."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            raw = "\n".join(lines[1:-1]) if len(lines) > 2 else raw
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
 
 def _load_rules() -> dict:
     with open(os.path.join(_ROOT, "configs", "rules.yaml")) as f:
@@ -193,8 +209,8 @@ def reporting_agent(state: GraphState) -> GraphState:
     translation_confidence = state.get("translation_confidence", {})
 
     # parse EHR result
-    # ehr_raw = state.get("ehr_validation_result", {})
-    # ehr_parsed = _parse_ehr_result(ehr_raw)
+    ehr_raw = state.get("ehr_validation_result", {})
+    ehr_parsed = _parse_ehr_result(ehr_raw)
 
     # # recalculate / finalise risk score
     # score, risk_level, recommendation = _calc_risk_score(
