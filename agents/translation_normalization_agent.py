@@ -4,16 +4,35 @@ import yaml
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph_workflows.state import GraphState
+from agents.llm import gateway_kwargs, get_default_model
 
 load_dotenv()
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
+
+def _load_persona() -> str:
+    """Load the translation_agent persona from persona_clinical_agent.yaml."""
+    path = os.path.join(_ROOT, "configs", "persona_clinical_agent.yaml")
+    with open(path, "r") as f:
+        personas = yaml.safe_load(f)
+    p = personas.get("translation_agent", {})
+    expertise = "\n".join(f"  - {e}" for e in p.get("expertise", []))
+    responsibilities = "\n".join(f"  - {r}" for r in p.get("responsibilities", []))
+    behavioral_guidelines = "\n".join(f"  - {b}" for b in p.get("behavioral_guidelines", []))
+    return (
+        f"## Agent Identity\n"
+        f"Name: {p.get('name', '')}\n"
+        f"Role: {p.get('role', '').strip()}\n\n"
+        f"## Expertise\n{expertise}\n\n"
+        f"## Responsibilities\n{responsibilities}\n\n"
+        f"## Behavioral Guidelines\n{behavioral_guidelines}\n"
+    )
+
 def _build_llm():
     return ChatOpenAI(
-        model="gpt-5.4-mini",
-        api_key=os.getenv("FOUNDATION_MODEL_API_KEY"),
-        base_url=os.getenv("LLM_BASE_URL"),
+        model=get_default_model(),
+        **gateway_kwargs(),
     )
 
 def _load_abbrev_map() -> str:
@@ -27,7 +46,12 @@ def translate_with_llm(text: str) -> dict:
     llm = _build_llm()
     abbrev_examples = _load_abbrev_map()
 
-    prompt = f"""You are a medical translation and normalization assistant.
+    persona = _load_persona()
+    prompt = f"""{persona}
+
+---
+
+You are a medical translation and normalization assistant.
 
 Your job:
 1. Detect the source language of the input text.

@@ -39,22 +39,66 @@ def _extract_patient_id(filename: str) -> str:
     return match.group(1).upper() if match else "PATIENT_UNKNOWN"
 
 
-def _get_completed_nodes(thread_id: str) -> list:
+def _get_completed_nodes(thread_id: str, snapshot=None) -> list:
     """
-    Walk the LangGraph checkpoint history to find which nodes have finished.
-    Each checkpoint's metadata.writes contains {node_name: state_updates}.
+    Determine completed nodes from the graph state values and execution status.
     """
-    config = {"configurable": {"thread_id": thread_id}}
+    if snapshot is None:
+        try:
+            snapshot = graph.get_state({"configurable": {"thread_id": thread_id}})
+        except Exception:
+            return []
+
+    if not snapshot or not snapshot.values:
+        return []
+
+    values = snapshot.values
     completed = []
-    try:
-        for snapshot in graph.get_state_history(config):
-            writes = (snapshot.metadata or {}).get("writes") or {}
-            for node_name in writes:
-                if node_name not in ("__start__", "__input__") and node_name not in completed:
-                    completed.append(node_name)
-    except Exception:
-        pass
+
+    # 1. Translation: completed if translated_data has text
+    translated = values.get("translated_data")
+    if translated and isinstance(translated, dict) and any(bool(v) for v in translated.values()):
+        completed.append("translation")
+
+    # 2. Completeness: completed if patient_record exists
+    if values.get("patient_record") is not None:
+        completed.append("completeness")
+
+    # 3. Human Review: completed if status is approved or subsequent stages have completed
+    status = values.get("status")
+    ehr_done = values.get("ehr_validation_done")
+    final_report = values.get("final_report")
+    if status == "approved" or ehr_done or final_report:
+        completed.append("human_review")
+
+    # 4. EHR Validation: completed if ehr_validation_done or final_report exists
+    if ehr_done or final_report:
+        completed.append("ehr_validation")
+
+    # 5. Reporting: completed if final_report dictionary is present
+    if final_report and isinstance(final_report, dict) and final_report.get("patient_id"):
+        completed.append("reporting")
+
+    # 6. Clinician EHR Review: completed if clinician override or approval in final_report
+    if final_report and (final_report.get("clinician_override") or final_report.get("hitl_action") == "approved"):
+        completed.append("human_ehr_review")
+
+    # 7. RAG Indexing: completed if report is generated and workflow has finished
+    if bool(final_report) and (not snapshot.next or "rag_indexing" not in snapshot.next):
+        completed.append("rag_indexing")
+
     return completed
+
+
+def _get_task_errors(snapshot) -> list:
+    """Extract any runtime task errors from the LangGraph snapshot."""
+    errors = []
+    if snapshot and snapshot.tasks:
+        for t in snapshot.tasks:
+            err = getattr(t, "error", None)
+            if err:
+                errors.append((getattr(t, "name", "node"), str(err)))
+    return errors
 
 
 def _show_pipeline_progress(thread_id: str):
@@ -62,8 +106,9 @@ def _show_pipeline_progress(thread_id: str):
     config = {"configurable": {"thread_id": thread_id}}
 
     try:
-        snapshot       = graph.get_state(config)
-        completed_nodes = _get_completed_nodes(thread_id)
+        snapshot        = graph.get_state(config)
+        completed_nodes = _get_completed_nodes(thread_id, snapshot)
+        task_errors     = _get_task_errors(snapshot)
     except Exception:
         st.info("⏳ Waiting for Monitor Agent to start the pipeline...")
         return
@@ -73,8 +118,24 @@ def _show_pipeline_progress(thread_id: str):
         st.caption("Make sure `python main.py` is running in a separate terminal.")
         return
 
+    # Check for execution errors first
+    if task_errors:
+        for task_name, err_msg in task_errors:
+            stage_label = dict(PIPELINE_STAGES).get(task_name, task_name)
+            st.error(f"❌ **Pipeline Error in {stage_label}:**\n\n`{err_msg}`")
+            if "AuthenticationError" in err_msg or "invalid_api_key" in err_msg:
+                st.warning("🔑 **Fix:** Check your API key in `.env` or OmniRouter/LiteLLM Gateway configuration.")
+            elif "Connection" in err_msg or "refused" in err_msg or "500" in err_msg or "503" in err_msg or "unreachable" in err_msg.lower():
+                st.warning("🔌 **Fix:** Check that your local LLM gateway (`python main.py` or OmniRouter/Ollama) is running and reachable.")
+
     waiting_node = snapshot.next[0] if snapshot.next else None
     is_complete  = (not snapshot.next) and bool(snapshot.values.get("final_report"))
+
+    # Auto-navigate if the pipeline just reached human review while user was on upload page
+    if waiting_node == "human_review" and st.session_state.get("pipeline_started"):
+        st.session_state["pipeline_started"] = False
+        st.session_state.page = "Validation"
+        st.rerun()
 
     st.subheader("📊 Pipeline Progress")
 
@@ -85,19 +146,21 @@ def _show_pipeline_progress(thread_id: str):
     )
 
     for idx, (node_key, label) in enumerate(PIPELINE_STAGES):
+        # If this node has a task error
+        node_has_error = any(t_name == node_key for t_name, _ in task_errors)
 
-        if node_key in completed_nodes:
+        if node_has_error:
+            st.error(f"❌ {label}  *(failed)*")
+
+        elif node_key in completed_nodes:
             st.success(f"✅ {label}")
 
         elif node_key == waiting_node:
             st.warning(f"⏸ {label}  ← **Action required**")
-            if node_key == "human_review":
-                st.session_state.page = "Validation"
-            elif node_key == "human_ehr_review":
-                st.session_state.page = "EHR Review"
 
         elif (not is_complete
               and not waiting_node
+              and not task_errors
               and idx == last_done_idx + 1):
             st.info(f"🔄 {label}  ← Running...")
 
@@ -117,18 +180,28 @@ def _show_pipeline_progress(thread_id: str):
             f"{icons.get(risk, '⚪')} **Pipeline complete** — "
             f"Risk: **{risk.upper()}** (score {score})"
         )
-        st.session_state.page = "Final Report"
-    elif waiting_node:
+        col_f1, _ = st.columns([1, 2])
+        with col_f1:
+            if st.button("📋 View Final Report ➔", type="primary", use_container_width=True):
+                st.session_state.page = "Final Report"
+                st.rerun()
+
+    elif waiting_node and not task_errors:
         st.divider()
-        action_page = {
-            "human_review":     "Validation",
-            "human_ehr_review": "EHR Review",
-        }.get(waiting_node, "")
-        if action_page:
+        action_map = {
+            "human_review":     ("Validation", "🏥 Open Human Review Dashboard"),
+            "human_ehr_review": ("EHR Review", "👨‍⚕️ Open Clinician EHR Review"),
+        }
+        if waiting_node in action_map:
+            page_name, btn_label = action_map[waiting_node]
             st.warning(
-                f"⚠ Pipeline is paused and needs your input. "
-                f"Go to the **{action_page}** page."
+                f"⚠️ **Action Required:** Pipeline is paused at **{page_name}**."
             )
+            col_act, _ = st.columns([1, 2])
+            with col_act:
+                if st.button(f"{btn_label} ➔", type="primary", use_container_width=True):
+                    st.session_state.page = page_name
+                    st.rerun()
 
 
 def document_upload_page():
@@ -182,6 +255,7 @@ def document_upload_page():
         # Derive patient_id from the doctor report filename
         patient_id = _extract_patient_id(doctor_file.name)
         st.session_state["active_thread_id"] = patient_id
+        st.session_state["pipeline_started"] = True
 
         with st.spinner("Saving documents to incoming folders..."):
             _save_file(bill_file,   bills_folder)

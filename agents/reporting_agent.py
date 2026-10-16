@@ -16,6 +16,7 @@ import datetime
 from typing import Any
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from agents.llm import gateway_kwargs, get_reasoning_model
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph_workflows.state import GraphState
@@ -29,11 +30,28 @@ REPORTS_DIR = os.path.join(_ROOT, "data", "reports")
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _load_persona() -> str:
+    """Load the reporting_agent persona from persona_clinical_agent.yaml."""
+    path = os.path.join(_ROOT, "configs", "persona_clinical_agent.yaml")
+    with open(path, "r") as f:
+        personas = yaml.safe_load(f)
+    p = personas.get("reporting_agent", {})
+    expertise = "\n".join(f"  - {e}" for e in p.get("expertise", []))
+    responsibilities = "\n".join(f"  - {r}" for r in p.get("responsibilities", []))
+    behavioral_guidelines = "\n".join(f"  - {b}" for b in p.get("behavioral_guidelines", []))
+    return (
+        f"## Agent Identity\n"
+        f"Name: {p.get('name', '')}\n"
+        f"Role: {p.get('role', '').strip()}\n\n"
+        f"## Expertise\n{expertise}\n\n"
+        f"## Responsibilities\n{responsibilities}\n\n"
+        f"## Behavioral Guidelines\n{behavioral_guidelines}\n"
+    )
+
 def _llm():
     return ChatOpenAI(
-        model="gpt-5.4-mini",
-        api_key=os.getenv("FOUNDATION_MODEL_API_KEY"),
-        base_url=os.getenv("LLM_BASE_URL"),
+        model=get_reasoning_model(),
+        **gateway_kwargs(),
     )
 
 def _parse_ehr_result(raw: Any) -> dict:
@@ -60,7 +78,11 @@ def _load_rules() -> dict:
 
 def _generate_patient_summary(patient_record: dict, ehr_parsed: dict) -> str:
     """Ask LLM to produce a plain-English discharge summary."""
-    prompt = ChatPromptTemplate.from_template("""
+    persona = _load_persona()
+    prompt = ChatPromptTemplate.from_template(persona + """
+
+---
+
 You are a clinical documentation specialist writing a patient-friendly discharge summary.
 
 Rules:
@@ -191,7 +213,7 @@ def _write_html_report(report: dict, patient_id: str) -> str:
 </body>
 </html>"""
 
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(html)
     return path
 

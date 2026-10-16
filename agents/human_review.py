@@ -15,10 +15,13 @@ def human_review(state):
     if action == "approve":
         state["patient_record"] = review["patient_record"]
         state["missing_fields"] = []
+        state['status']="approved"
 
     elif action == "edit":
+        print("inside backend edit ,graph invokation")
         state["patient_record"] = review["patient_record"]
         state["missing_fields"] = validate_patient_record(state["patient_record"])
+        state["status"]="approved"
 
     elif action == "reject":
         state["status"] = "rejected"

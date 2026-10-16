@@ -1,15 +1,13 @@
 from dotenv import load_dotenv
 import os
 from langchain_openai import ChatOpenAI
+from agents.llm import gateway_kwargs, get_default_model
 load_dotenv()
-api_key=os.getenv("FOUNDATION_MODEL_API_KEY")
-base_url=os.getenv("LLM_BASE_URL")
 
 llm=ChatOpenAI(
-    model="gpt-5.4-mini",
+    model=get_default_model(),
     temperature=0.7,
-    api_key=api_key,
-    base_url=base_url
+    **gateway_kwargs(),
 )
 
 class GenerationAgent:

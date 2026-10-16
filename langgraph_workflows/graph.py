@@ -1,5 +1,10 @@
+import os
 import sqlite3
+import warnings
 from langgraph.graph import StateGraph, END
+
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DB_PATH = os.path.join(_PROJECT_ROOT, "hospital_graph.db")
 
 try:
     from langgraph.checkpoint.sqlite import SqliteSaver
@@ -7,6 +12,12 @@ try:
 except (ImportError, ModuleNotFoundError):
     from langgraph.checkpoint.memory import MemorySaver
     _USE_SQLITE = False
+    warnings.warn(
+        "langgraph.checkpoint.sqlite is NOT available; falling back to in-memory checkpointer. "
+        "Workflow state will NOT be shared between Monitor Agent (main.py) and Streamlit UI. "
+        "Run `pip install langgraph-checkpoint-sqlite` or run scripts using .venv.",
+        RuntimeWarning,
+    )
 
 from langgraph_workflows.state import GraphState
 from agents.translation_normalization_agent import translation_agent
@@ -21,15 +32,25 @@ _indexing_agent = IndexingAgent()
 
 def rag_indexing_node(state: GraphState) -> GraphState:
     """Index the final discharge report into FAISS for Q&A."""
-    final_report = state.get("final_report", {})
-    summary = final_report.get("patient_summary", "")
+    translated_data = state.get("translated_data", {})
     patient_id = state.get("patient_id", "unknown")
+    print(f"[RAG Indexing] node entered for patient_id={patient_id}")
+    print(f"[RAG Indexing] translated_data keys: {list(translated_data.keys())}")
 
-    if summary:
+    text = "\n\n".join(
+        f"{section.upper()}:\n{content}" for section, content in translated_data.items() if content
+    )
+    print(f"[RAG Indexing] combined text length: {len(text)} chars")
+
+    if text:
         print(f"[RAG Indexing] Indexing report for {patient_id}...")
-        _indexing_agent.run(summary)
+        try:
+            _indexing_agent.run(text, patient_id=patient_id)
+            print(f"[RAG Indexing] Finished indexing for {patient_id}")
+        except Exception as e:
+            print(f"[RAG Indexing] Indexing error: {e}")
     else:
-        print("[RAG Indexing] No summary to index, skipping.")
+        print("[RAG Indexing] No text to index, skipping.")
 
     return state
 
@@ -118,11 +139,11 @@ builder.add_conditional_edges(
 # builder.add_edge("human_ehr_review","reporting")
 builder.add_edge("reporting","rag_indexing")
 
-builder.add_edge("human_ehr_review", "rag_indexing")
+# builder.add_edge("human_ehr_review", "rag_indexing")
 builder.add_edge("rag_indexing", END)
 
 if _USE_SQLITE:
-    conn = sqlite3.connect("hospital_graph.db", check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     checkpointer = SqliteSaver(conn)
 else:
     checkpointer = MemorySaver()

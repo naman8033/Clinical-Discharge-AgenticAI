@@ -4,7 +4,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langgraph_workflows.state import GraphState
 from langchain_openai import ChatOpenAI
+from agents.llm import gateway_kwargs, get_default_model
 from dotenv import load_dotenv
+import yaml
 
 load_dotenv()
 
@@ -14,19 +16,41 @@ with open(os.path.join(_ROOT, "configs", "rules.json"), "r") as f:
     rules = json.load(f)
 json_schema = rules['json_keys']
 
+
+def _load_persona() -> str:
+    """Load the completeness_agent persona from persona_clinical_agent.yaml."""
+    path = os.path.join(_ROOT, "configs", "persona_clinical_agent.yaml")
+    with open(path, "r") as f:
+        personas = yaml.safe_load(f)
+    p = personas.get("completeness_agent", {})
+    expertise = "\n".join(f"  - {e}" for e in p.get("expertise", []))
+    responsibilities = "\n".join(f"  - {r}" for r in p.get("responsibilities", []))
+    behavioral_guidelines = "\n".join(f"  - {b}" for b in p.get("behavioral_guidelines", []))
+    return (
+        f"## Agent Identity\n"
+        f"Name: {p.get('name', '')}\n"
+        f"Role: {p.get('role', '').strip()}\n\n"
+        f"## Expertise\n{expertise}\n\n"
+        f"## Responsibilities\n{responsibilities}\n\n"
+        f"## Behavioral Guidelines\n{behavioral_guidelines}\n"
+    )
+
 def build_patient_record(translated_text: dict) -> dict:
     global json_schema
     """
         Uses LLM to consolidate doctor, lab and bill data
         into one canonical patient record.
     """
-    llm = ChatOpenAI(model="gpt-5.4-mini",
-                     api_key=os.getenv("FOUNDATION_MODEL_API_KEY"),
-                     base_url=os.getenv("LLM_BASE_URL"))
+    persona = _load_persona()
+    llm = ChatOpenAI(model=get_default_model(),
+                     **gateway_kwargs())
 
     parser = JsonOutputParser()
     prompt = ChatPromptTemplate.from_template(
-        """
+        persona + """
+
+---
+
         You are a clinical document consolidation assistant.
         You will receive translated clinical documents from multiple sources.
         Sources:

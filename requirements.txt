@@ -9,3 +9,22 @@ python-docx
 pdf2image
 pytesseract
 streamlit
+langgraph
+langchain-text-splitters
+langchain-community
+faiss-cpu
+streamlit-autorefresh
+langgraph-checkpoint-sqlite
+
+# ── LLM Gateway ──────────────────────────────────────────────────────────────
+litellm>=1.40.0          # Core LiteLLM library (model-switching, fallbacks)
+# litellm[proxy]>=1.40.0 # Uncomment for full LiteLLM proxy server features
+
+# ── LangChain / agents ───────────────────────────────────────────────────────
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-core>=0.3.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+httpx>=0.27.0

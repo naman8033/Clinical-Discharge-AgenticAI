@@ -34,7 +34,7 @@ def validation_page():
         st.stop()
 
     state = snapshot.values
-    print("stream lit state: ", state)
+    # print("stream lit state: ", state)
     patient_record = state.get("patient_record", {})
     missing_fields = state.get("missing_fields", [])
 
@@ -177,9 +177,11 @@ def validation_page():
 
     def _resume_and_navigate(payload: dict):
         """Invoke graph with HITL response, check where it ended up, and navigate."""
+        print("processing graph for save continue")
         with st.spinner("Processing — please wait..."):
             graph.invoke(Command(resume=payload), config=config)
         snap = graph.get_state(config)
+        print("snap======================",snap)
         if snap and snap.next:
             next_node = snap.next[0]
             if next_node == "human_ehr_review":
@@ -206,6 +208,7 @@ def validation_page():
 
     with col3:
         if st.button("💾 Save & Continue", use_container_width=True):
+            print("inside save continue")
             _resume_and_navigate({
                 "action": "edit",
                 "patient_record": edited_record,

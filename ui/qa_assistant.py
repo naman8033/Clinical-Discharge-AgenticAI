@@ -8,12 +8,10 @@ import os
 import streamlit as st
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
+from agents.llm import gateway_kwargs, get_embeddings
 from dotenv import load_dotenv
 
 load_dotenv()
-
-_api_key  = os.getenv("FOUNDATION_MODEL_API_KEY")
-_base_url = os.getenv("LLM_BASE_URL")
 
 FAISS_INDEX_PATH = "faiss_index"
 
@@ -23,11 +21,7 @@ def _load_vector_db():
     """Load the FAISS index from disk (created by the indexing agent after the pipeline)."""
     if not os.path.exists(FAISS_INDEX_PATH):
         return None
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        api_key=_api_key,
-        base_url=_base_url,
-    )
+    embeddings = get_embeddings()
     return FAISS.load_local(
         FAISS_INDEX_PATH,
         embeddings,
@@ -35,8 +29,33 @@ def _load_vector_db():
     )
 
 
+def _run_aggregate_pipeline(query: str) -> dict:
+    """Answer counting/filtering questions across all patients via the structured query agent."""
+    from agents.rag_agents.structured_query_agent import StructuredQueryAgent
+
+    result = StructuredQueryAgent().run(query)
+    return {
+        "query_type":             "aggregate",
+        "retrieved_chunks":       [],
+        "augmented_context":      result["context_table"],
+        "generated_answer":       result["answer"],
+        "final_answer":           result["answer"],
+        "groundedness_score":     1.0,
+        "answer_relevance_score": 1.0,
+        "context_relevance_score":1.0,
+        "safety_label":           "Safe",
+        "grounded":               True,
+        "record_count":           result["record_count"],
+    }
+
+
 def _run_rag_pipeline(query: str, vector_db) -> dict:
-    """Run all 5 RAG agents and return the full result dict."""
+    """Route the question to the structured (aggregate) or semantic (single-patient) RAG path."""
+    from agents.rag_agents.router_agent import classify_query
+
+    if classify_query(query) == "aggregate":
+        return _run_aggregate_pipeline(query)
+
     from agents.rag_agents.retrieval_agent import RetrievalAgent
     from agents.rag_agents.augmentation_agent import AugmentationAgent
     from agents.rag_agents.generation_agent import GenerationAgent
@@ -51,6 +70,7 @@ def _run_rag_pipeline(query: str, vector_db) -> dict:
         "query": query,
     })
     return {
+        "query_type":             "patient_specific",
         "retrieved_chunks":       retrieval_result["retrieved_chunks"],
         "augmented_context":      augmentation_result["augmented_context"],
         "generated_answer":       generation_result["generated_answer"],
@@ -74,7 +94,9 @@ def qa_chatbot_page():
         "- List medication discrepancies for this patient.\n"
         "- What is the patient's discharge diagnosis?\n"
         "- Is the bill settled before discharge?\n"
-        "- What are the discharge instructions?"
+        "- What are the discharge instructions?\n"
+        "- How many patients were discharged on 30 June?\n"
+        "- List all patients with a high risk level."
     )
 
     st.divider()
@@ -128,10 +150,14 @@ def qa_chatbot_page():
             cols[1].metric("Relevance",    f"{result['answer_relevance_score']:.2f}")
             cols[2].metric("Safety",       safety_label)
 
-            with st.expander("📄 Retrieved Context Chunks"):
-                for i, chunk in enumerate(result["retrieved_chunks"], 1):
-                    st.markdown(f"**Chunk {i}:**")
-                    st.text(chunk)
+            if result["query_type"] == "aggregate":
+                with st.expander(f"📊 Patient Records Considered ({result['record_count']})"):
+                    st.text(result["augmented_context"])
+            else:
+                with st.expander("📄 Retrieved Context Chunks"):
+                    for i, chunk in enumerate(result["retrieved_chunks"], 1):
+                        st.markdown(f"**Chunk {i}:**")
+                        st.text(chunk)
 
             st.session_state.qa_history.append({
                 "question":   query,

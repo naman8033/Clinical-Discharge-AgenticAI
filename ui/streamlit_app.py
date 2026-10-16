@@ -20,7 +20,7 @@ from validation import validation_page
 from ehr_review import ehr_review_page
 from qa_assistant import qa_chatbot_page
 from final_report import final_report_page
-from langgraph_workflows.graph import graph
+from langgraph_workflows.graph import graph, DB_PATH
 
 st.set_page_config(
     page_title="Hospital Agentic AI",
@@ -267,8 +267,6 @@ code {
 </style>
 """, unsafe_allow_html=True)
 
-st_autorefresh(interval=2000, key="poll")
-
 st.sidebar.title("🏥 Agentic AI")
 
 PAGES = [
@@ -289,31 +287,93 @@ page = st.sidebar.radio(
 )
 st.session_state.page = page
 
+def _get_db_threads() -> list:
+    """Retrieve all available patient thread IDs from SQLite checkpoints."""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY rowid DESC")
+        threads = [r[0] for r in cur.fetchall() if r[0]]
+        conn.close()
+        return threads
+    except Exception:
+        return []
+
+available_threads = _get_db_threads()
+if "active_thread_id" not in st.session_state and available_threads:
+    st.session_state["active_thread_id"] = available_threads[0]
+
 thread_id = st.session_state.get("active_thread_id", "patient_01")
 config    = {"configurable": {"thread_id": thread_id}}
 snapshot  = graph.get_state(config)
 
-if snapshot and snapshot.next:
+task_errors = []
+if snapshot and snapshot.tasks:
+    for t in snapshot.tasks:
+        if getattr(t, "error", None):
+            task_errors.append((getattr(t, "name", "node"), str(t.error)))
+
+if snapshot and snapshot.next and not task_errors:
     next_node = snapshot.next[0]
-    if next_node == "human_review" and page not in ("Validation", "Document Upload"):
+    if st.session_state.get("pipeline_started"):
+        if next_node == "human_review":
+            st.session_state["pipeline_started"] = False
+            st.session_state.page = "Validation"
+            page = "Validation"
+        elif next_node == "human_ehr_review":
+            st.session_state["pipeline_started"] = False
+            st.session_state.page = "EHR Review"
+            page = "EHR Review"
+    elif next_node == "human_review" and page not in ("Validation", "Document Upload"):
         st.session_state.page = "Validation"
         page = "Validation"
     elif next_node == "human_ehr_review" and page not in ("EHR Review", "Document Upload"):
         st.session_state.page = "EHR Review"
         page = "EHR Review"
 
-elif snapshot and snapshot.values.get("final_report") and page == "Document Upload":
-    # Pipeline just completed — auto-navigate away from upload page
+elif snapshot and snapshot.values.get("final_report") and page == "Document Upload" and st.session_state.get("pipeline_started"):
+    st.session_state["pipeline_started"] = False
     st.session_state.page = "Final Report"
     page = "Final Report"
 
-st.sidebar.divider()
-st.sidebar.caption(f"Active Thread: `{thread_id}`")
+# Skip polling on pages with long synchronous LLM calls — a forced rerun mid-call aborts the script before results render.
+if page not in ("QA Chatbot", "Final Report"):
+    st_autorefresh(interval=2000, key="poll")
 
-if snapshot and snapshot.next:
+st.sidebar.divider()
+
+if available_threads:
+    curr_idx = available_threads.index(thread_id) if thread_id in available_threads else 0
+    selected_thread = st.sidebar.selectbox(
+        "Active Patient Thread",
+        available_threads,
+        index=curr_idx,
+        key="thread_selector",
+    )
+    if selected_thread != thread_id:
+        st.session_state["active_thread_id"] = selected_thread
+        st.rerun()
+else:
+    st.sidebar.caption(f"Active Thread: `{thread_id}`")
+
+if task_errors:
+    st.sidebar.error("❌ Pipeline node error")
+    for t_name, err in task_errors:
+        st.sidebar.caption(f"**{t_name}**: {err[:60]}...")
+
+elif snapshot and snapshot.next:
     waiting = snapshot.next[0]
     label   = {"human_review": "Missing Fields", "human_ehr_review": "EHR Review"}.get(waiting, waiting)
     st.sidebar.warning(f"⏳ Paused: **{label}**")
+    if waiting == "human_review" and page != "Validation":
+        if st.sidebar.button("Go to Validation ➔", key="sb_goto_val", use_container_width=True):
+            st.session_state.page = "Validation"
+            st.rerun()
+    elif waiting == "human_ehr_review" and page != "EHR Review":
+        if st.sidebar.button("Go to EHR Review ➔", key="sb_goto_ehr", use_container_width=True):
+            st.session_state.page = "EHR Review"
+            st.rerun()
 
 elif snapshot and snapshot.values.get("final_report"):
     risk  = snapshot.values["final_report"].get("risk_level", "")

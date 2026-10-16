@@ -5,6 +5,7 @@ import requests
 from typing import Any
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from agents.llm import gateway_kwargs, get_default_model
 from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import tool
 from langgraph_workflows.state import GraphState
@@ -13,6 +14,25 @@ from langchain_core.prompts import ChatPromptTemplate
 load_dotenv()
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+def _load_persona() -> str:
+    """Load the ehr_validation_agent persona from persona_clinical_agent.yaml."""
+    path = os.path.join(_ROOT, "configs", "persona_clinical_agent.yaml")
+    with open(path, "r") as f:
+        personas = yaml.safe_load(f)
+    p = personas.get("ehr_validation_agent", {})
+    expertise = "\n".join(f"  - {e}" for e in p.get("expertise", []))
+    responsibilities = "\n".join(f"  - {r}" for r in p.get("responsibilities", []))
+    behavioral_guidelines = "\n".join(f"  - {b}" for b in p.get("behavioral_guidelines", []))
+    return (
+        f"## Agent Identity\n"
+        f"Name: {p.get('name', '')}\n"
+        f"Role: {p.get('role', '').strip()}\n\n"
+        f"## Expertise\n{expertise}\n\n"
+        f"## Responsibilities\n{responsibilities}\n\n"
+        f"## Behavioral Guidelines\n{behavioral_guidelines}\n"
+    )
 
 BASE_URL = "http://localhost:8001"
 
@@ -64,13 +84,18 @@ def _build_system_prompt(rules: dict, patient_record: dict) -> str:
        e.g. allergy_contradiction is both a weight AND a hard guardrail,
        so it always blocks auto-approval even if score is somehow ≤ 2.
     """
+    persona    = _load_persona()
     policies   = rules["clinical_validation_policies"]
     weights    = rules["risk_scoring_matrix"]["weights"]
     thresholds = rules["risk_scoring_matrix"]["thresholds"]
     guardrails = rules["risk_scoring_matrix"]["hitl_hard_guardrails"]
     high_risk  = policies["high_risk_meds_need_counseling"]
 
-    return f"""You are an EHR Validation Agent — a cross-reference auditor.
+    return f"""{persona}
+
+---
+
+You are an EHR Validation Agent — a cross-reference auditor.
 
 ## Patient discharge record to validate
 {patient_record}
@@ -208,9 +233,8 @@ def ehr_validation_agent(state: GraphState) -> GraphState:
     ]
 
     llm = ChatOpenAI(
-        model="gpt-5.4-mini",                          
-        api_key=os.getenv("FOUNDATION_MODEL_API_KEY"),
-        base_url=os.getenv("LLM_BASE_URL"),
+        model=get_default_model(),                          
+        **gateway_kwargs(),
     )
 
     system_prompt = _build_system_prompt(rules, state["patient_record"])
